@@ -1,0 +1,23 @@
+{
+  "note": "sample_input_640 is already the 640x640 stretched image, so the stretch stage is skipped. Stages after it come from the OpenCV training code (preprocess_images.py, make_crops.py).",
+  "box_px_640": {
+    "x1": 186.0,
+    "y1": 59.75,
+    "x2": 380.0,
+    "y2": 412.25
+  },
+  "crop_square_side": 387,
+  "expected_focus_score": 35.94,
+  "pass_if_mean_abs_diff_at_most": {
+    "white_balanced": 0.5,
+    "clahe": 2.0,
+    "unsharp": 2.0,
+    "crop_224": 1.0
+  },
+  "reference_dart_result_for_comparison": {
+    "white_balanced": 0.05,
+    "clahe": 1.0,
+    "unsharp": 1.08,
+    "crop_224": 0.0
+  }
+}
