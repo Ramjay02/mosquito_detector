@@ -144,4 +144,78 @@ void main() {
     final String? lockout = await store.read(AuthController.keyLockoutUntil);
     expect(lockout, isNotNull);
   });
+
+  test('registration password is held only in controller memory', () {
+    final AuthController controller = AuthController();
+    controller.setRegistrationPassword('SecretPassword!');
+    expect(controller.registrationPassword, 'SecretPassword!');
+    controller.clearRegistrationPassword();
+    expect(controller.registrationPassword, isNull);
+    controller.dispose();
+  });
+
+  test(
+    'already_verified verification is successful and legacy pending is blocked',
+    () async {
+      final AuthController verifyController = AuthController(
+        api: AuthApi(
+          client: MockClient((http.Request request) async {
+            return http.Response(
+              jsonEncode(<String, dynamic>{
+                'ok': false,
+                'code': 'already_verified',
+                'message': '',
+                'data': null,
+              }),
+              400,
+              headers: <String, String>{'content-type': 'application/json'},
+            );
+          }),
+        ),
+      );
+      final AuthResult verified = await verifyController.verifyEmail(
+        email: 'test@example.com',
+        code: '123456',
+      );
+      expect(verified.success, isTrue);
+
+      final AuthController legacyController = AuthController(
+        store: InMemorySecureStore(),
+        api: AuthApi(
+          client: MockClient((http.Request request) async {
+            return http.Response(
+              jsonEncode(<String, dynamic>{
+                'ok': true,
+                'code': 'ok',
+                'message': '',
+                'data': <String, dynamic>{
+                  'token': 'legacy-token',
+                  'token_expires_at': '2026-12-31T00:00:00Z',
+                  'server_time': '2026-10-31T00:00:00Z',
+                  'user': <String, dynamic>{
+                    'id': 1,
+                    'full_name': 'Legacy User',
+                    'email': 'legacy@example.com',
+                    'role': 'field_worker',
+                    'status': 'pending',
+                  },
+                },
+              }),
+              200,
+              headers: <String, String>{'content-type': 'application/json'},
+            );
+          }),
+        ),
+      );
+      final AuthResult legacy = await legacyController.login(
+        'legacy@example.com',
+        'Password123',
+      );
+      expect(legacy.success, isFalse);
+      expect(legacy.code, 'account_pending');
+      expect(legacy.message, 'Account not available, try again later');
+      expect(legacy.message, 'Account not available, try again later');
+      expect(legacyController.status, AuthStatus.signedOut);
+    },
+  );
 }

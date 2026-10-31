@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../auth_controller.dart';
-import 'login_page.dart';
 import 'register_page.dart';
+import 'account_created_page.dart';
 
 class VerifyEmailPage extends StatefulWidget {
   const VerifyEmailPage({
@@ -31,11 +31,14 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
   late int _remaining;
   bool _loading = false;
   String? _error;
+  String? _passwordInMemory;
 
   @override
   void initState() {
     super.initState();
     _remaining = widget.initialResendSeconds;
+    _passwordInMemory =
+        widget.controller.registrationPassword ?? widget.passwordInMemory;
     _startTimer();
   }
 
@@ -54,10 +57,13 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
   void dispose() {
     _timer?.cancel();
     _code.dispose();
+    _passwordInMemory = null;
+    widget.controller.clearRegistrationPassword();
     super.dispose();
   }
 
   Future<void> _verify() async {
+    if (_loading) return;
     if (_code.text.length != 6) {
       setState(() => _error = 'Enter the 6-digit code.');
       return;
@@ -73,31 +79,45 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
     if (!mounted) return;
     setState(() => _loading = false);
     if (!result.success) {
-      setState(() => _error = result.message);
+      final String message = switch (result.code) {
+        'invalid_code' =>
+          'That code is not valid. Check it or request a new one.',
+        'code_expired' => 'That code has expired. Request a new one.',
+        'too_many_attempts' => 'Too many wrong codes. Request a new code.',
+        'rate_limited' || 'resend_too_soon' =>
+          'Please wait ${result.retryAfter ?? 60} seconds before trying again.',
+        'network' => 'No internet connection.',
+        _ =>
+          result.message.isNotEmpty
+              ? result.message
+              : 'Something went wrong. Please try again.',
+      };
+      setState(() => _error = message);
       return;
     }
-    final String? password = widget.passwordInMemory;
+    final String? password = _passwordInMemory;
+    _passwordInMemory = null;
+    widget.controller.clearRegistrationPassword();
+    bool signedIn = false;
     if (password != null && password.isNotEmpty) {
       final AuthResult login = await widget.controller.login(
         widget.email,
         password,
       );
       if (!mounted) return;
-      if (!login.success) {
-        setState(() => _error = login.message);
-      }
-      return;
+      signedIn = login.success;
     }
+    widget.controller.showAccountCreatedScreen();
+    if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(
-        builder: (_) => LoginPage(
+        builder: (_) => AccountCreatedPage(
           controller: widget.controller,
-          initialEmail: widget.email,
+          signedIn: signedIn,
         ),
       ),
       (_) => false,
     );
-    widget.controller.notice = 'E-mail verified. Please sign in.';
   }
 
   Future<void> _resend() async {
@@ -138,7 +158,9 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                 ),
                 const SizedBox(height: 20),
                 TextField(
+                  key: const ValueKey<String>('verify-code-field'),
                   controller: _code,
+                  enabled: !_loading,
                   autofillHints: const <String>[AutofillHints.oneTimeCode],
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
@@ -162,6 +184,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                 ],
                 const SizedBox(height: 12),
                 FilledButton(
+                  key: const ValueKey<String>('verify-submit'),
                   onPressed: _loading ? null : _verify,
                   child: _loading
                       ? const SizedBox(

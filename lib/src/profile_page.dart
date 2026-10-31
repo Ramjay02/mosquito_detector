@@ -24,8 +24,6 @@ class ProfilePage extends StatelessWidget {
   }
 
   String _role(String role) {
-    if (role == 'admin') return 'Administrator';
-    if (role == 'field_worker') return 'Field worker';
     return role.isEmpty ? 'Unknown' : role;
   }
 

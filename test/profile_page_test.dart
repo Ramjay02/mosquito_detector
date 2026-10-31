@@ -31,7 +31,7 @@ void main() {
     );
     expect(find.text('Maria Santos'), findsOneWidget);
     expect(find.text('maria@example.com'), findsOneWidget);
-    expect(find.text('Field worker'), findsOneWidget);
+    expect(find.text('field_worker'), findsOneWidget);
     controller.dispose();
   });
 }

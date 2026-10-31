@@ -49,11 +49,6 @@ class _LoginPageState extends State<LoginPage> {
     if (!mounted) return;
     setState(() => _loading = false);
     if (!result.success) {
-      setState(() {
-        _error = result.message.isNotEmpty
-            ? result.message
-            : authMessage(result.code, retryAfter: result.retryAfter);
-      });
       if (result.code == 'email_not_verified' || result.code == 'unverified') {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
@@ -63,6 +58,12 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
         );
+      } else {
+        setState(() {
+          _error = result.message.isNotEmpty
+              ? result.message
+              : authMessage(result.code, retryAfter: result.retryAfter);
+        });
       }
     }
   }

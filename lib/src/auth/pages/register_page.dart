@@ -60,6 +60,7 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
     if (!mounted) return;
+    widget.controller.setRegistrationPassword(_password.text);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (_) => VerifyEmailPage(

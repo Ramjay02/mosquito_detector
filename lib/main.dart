@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'src/app_shell.dart';
 import 'src/auth/auth_controller.dart';
 import 'src/auth/pages/login_page.dart';
-import 'src/auth/pages/awaiting_approval_page.dart';
+import 'src/auth/pages/account_created_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -61,21 +61,25 @@ class _AuthAppState extends State<_AuthApp> with WidgetsBindingObserver {
       animation: _auth,
       builder: (BuildContext context, Widget? child) {
         Widget home;
-        switch (_auth.status) {
-          case AuthStatus.splash:
-            home = const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-            break;
-          case AuthStatus.pending:
-            home = AwaitingApprovalPage(controller: _auth);
-            break;
-          case AuthStatus.signedIn:
-            home = AppShell(authController: _auth);
-            break;
-          case AuthStatus.signedOut:
-            home = LoginPage(controller: _auth);
-            break;
+        if (_auth.showingAccountCreated) {
+          home = AccountCreatedPage(
+            controller: _auth,
+            signedIn: _auth.status == AuthStatus.signedIn,
+          );
+        } else {
+          switch (_auth.status) {
+            case AuthStatus.splash:
+              home = const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+              break;
+            case AuthStatus.signedIn:
+              home = AppShell(authController: _auth);
+              break;
+            case AuthStatus.signedOut:
+              home = LoginPage(controller: _auth);
+              break;
+          }
         }
         return MaterialApp(
           title: 'Waya-waya Scanner',

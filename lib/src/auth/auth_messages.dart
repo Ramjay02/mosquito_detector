@@ -16,7 +16,7 @@ String authMessage(String? code, {int? retryAfter}) {
     case 'mail_unavailable':
       return 'We could not send the e-mail right now. Please try again later.';
     case 'account_pending':
-      return 'Your account is waiting for administrator approval.';
+      return 'Account not available, try again later';
     case 'account_disabled':
       return 'Your account has been disabled. Please contact the administrator.';
     case 'network':

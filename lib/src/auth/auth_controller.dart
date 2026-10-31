@@ -8,7 +8,7 @@ import 'auth_messages.dart';
 import 'password_hasher.dart';
 import 'secure_store.dart';
 
-enum AuthStatus { splash, signedOut, signedIn, pending }
+enum AuthStatus { splash, signedOut, signedIn }
 
 class AuthUser {
   const AuthUser({
@@ -98,6 +98,27 @@ class AuthController extends ChangeNotifier {
   String? notice;
   DateTime? lastMeCheck;
   Duration? lastPasswordHashDuration;
+  bool showingAccountCreated = false;
+  String? registrationPassword;
+
+  void setRegistrationPassword(String password) {
+    registrationPassword = password;
+  }
+
+  void clearRegistrationPassword() {
+    registrationPassword = null;
+  }
+
+  void showAccountCreatedScreen() {
+    showingAccountCreated = true;
+    notifyListeners();
+  }
+
+  void finishAccountCreatedScreen() {
+    showingAccountCreated = false;
+    notice = null;
+    notifyListeners();
+  }
 
   static const List<String> _allKeys = <String>[
     keyToken,
@@ -142,10 +163,20 @@ class AuthController extends ChangeNotifier {
         return;
       }
 
+      if (currentUser!.status == 'disabled') {
+        notice = authMessage('account_disabled');
+        await signOut(callServer: false);
+        return;
+      }
+      if (currentUser!.status == 'pending') {
+        notice = 'Account not available, try again later';
+        await _clearSession();
+        status = AuthStatus.signedOut;
+        notifyListeners();
+        return;
+      }
       isOfflineMode = true;
-      status = currentUser!.status == 'pending'
-          ? AuthStatus.pending
-          : AuthStatus.signedIn;
+      status = AuthStatus.signedIn;
       notifyListeners();
       await checkMeInBackground();
     } catch (_) {
@@ -167,15 +198,23 @@ class AuthController extends ChangeNotifier {
         final Map<String, dynamic> userJson =
             data['user'] as Map<String, dynamic>;
         final AuthUser user = AuthUser.fromJson(userJson);
-        if (user.status == 'pending') {
-          await _storeOnlineLogin(email, password, data, user);
-          status = AuthStatus.pending;
-          isOfflineMode = false;
-          return AuthResult(
+        if (user.status == 'disabled' || user.status == 'pending') {
+          if (user.status == 'disabled') {
+            await signOut(callServer: false);
+            return AuthResult(
+              success: false,
+              code: 'account_disabled',
+              message: authMessage('account_disabled'),
+            );
+          }
+          await _clearSession();
+          status = AuthStatus.signedOut;
+          notice = 'Account not available, try again later';
+          notifyListeners();
+          return const AuthResult(
             success: false,
             code: 'account_pending',
-            message: authMessage('account_pending'),
-            user: user,
+            message: 'Account not available, try again later',
           );
         }
         await _storeOnlineLogin(email, password, data, user);
@@ -198,7 +237,7 @@ class AuthController extends ChangeNotifier {
     } on NetworkFailure {
       return _loginOffline(email, password);
     } catch (_) {
-      return const AuthResult(
+      return AuthResult(
         success: false,
         code: 'server_error',
         message: 'Something went wrong. Please try again.',
@@ -287,9 +326,7 @@ class AuthController extends ChangeNotifier {
     tokenExpiresAt = _parseDate(await store.read(keyTokenExpiresAt));
     lastOnlineVerifiedAt = lastOnline;
     isOfflineMode = true;
-    status = currentUser!.status == 'pending'
-        ? AuthStatus.pending
-        : AuthStatus.signedIn;
+    status = AuthStatus.signedIn;
     notice = null;
     notifyListeners();
     return AuthResult(success: true, message: '', user: currentUser);
@@ -398,7 +435,8 @@ class AuthController extends ChangeNotifier {
         email: email,
         code: code,
       );
-      if (answer.statusCode == 200 && answer.ok) {
+      if ((answer.statusCode == 200 && answer.ok) ||
+          answer.code == 'already_verified') {
         return AuthResult(
           success: true,
           message: '',
@@ -492,9 +530,19 @@ class AuthController extends ChangeNotifier {
         await store.write(keyLastOnline, now.toUtc().toIso8601String());
         await _updateMaxSeen();
         isOfflineMode = false;
-        status = user.status == 'pending'
-            ? AuthStatus.pending
-            : AuthStatus.signedIn;
+        if (user.status == 'disabled') {
+          notice = authMessage('account_disabled');
+          await signOut(callServer: false);
+          return;
+        }
+        if (user.status == 'pending') {
+          notice = 'Account not available, try again later';
+          await _clearSession();
+          status = AuthStatus.signedOut;
+          notifyListeners();
+          return;
+        }
+        status = AuthStatus.signedIn;
         notifyListeners();
       }
     } on NetworkFailure {
@@ -513,6 +561,7 @@ class AuthController extends ChangeNotifier {
   Future<void> refreshStatus() => checkMeInBackground();
 
   Future<void> signOut({bool callServer = true}) async {
+    clearRegistrationPassword();
     if (callServer && currentToken != null) {
       try {
         await api.logout(currentToken!);

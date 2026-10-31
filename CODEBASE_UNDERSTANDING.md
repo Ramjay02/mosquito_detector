@@ -310,8 +310,14 @@ The storage code decodes the photo, bakes EXIF orientation, resizes the long sid
 - `lib/src/auth/` contains the API client, secure storage adapter, PBKDF2 password
   hashing, authentication controller, messages, and auth screens.
 - The app uses a root auth gate: splash during bootstrap, Login or registration
-  screens when signed out, the four-tab AppShell when signed in, and an
-  approval screen for pending accounts.
+  screens when signed out, and the four-tab AppShell when signed in.
+- Successful e-mail verification may return `already_verified` and is treated as
+  verification success. The verify screen disables its code field and verify
+  button while one request is running, maps inline error codes, and clears its
+  in-memory registration password before automatic sign-in.
+- After verification, the app shows a non-dismissible Account Created screen.
+  It holds the root auth gate in that state after a successful session login,
+  until "Start scanning" or "Go to login" is pressed.
 - The server contract is defined in `auth_api.dart`. Successful responses are
   parsed as API envelopes; network failures are distinct from server answers.
 - One account is stored per device in secure storage. Stored auth values include
