@@ -4,6 +4,8 @@ import 'package:mosquito_detector/src/app_navigation.dart';
 import 'package:mosquito_detector/src/app_shell.dart';
 import 'package:mosquito_detector/src/data/models.dart';
 import 'package:mosquito_detector/src/data/surveillance_repository.dart';
+import 'package:mosquito_detector/src/prediction/aedes_activity_repository.dart';
+import 'package:mosquito_detector/src/prediction/aedes_logistic_predictor.dart';
 import 'package:mosquito_detector/src/records_page.dart';
 
 void main() {
@@ -11,17 +13,19 @@ void main() {
 
   late AppNavigation navigation;
   late _FakeRepository repository;
+  late _FakePredictionRepository predictionRepository;
 
   setUp(() {
     navigation = AppNavigation();
     repository = _FakeRepository();
+    predictionRepository = _FakePredictionRepository();
   });
 
   testWidgets('navigation bar has four icon-only accessible destinations', (
     WidgetTester tester,
   ) async {
     final SemanticsHandle semantics = tester.ensureSemantics();
-    await _pumpShell(tester, navigation, repository);
+    await _pumpShell(tester, navigation, repository, predictionRepository);
 
     final NavigationBar bar = tester.widget(find.byType(NavigationBar));
     expect(bar.destinations, hasLength(4));
@@ -51,7 +55,7 @@ void main() {
   testWidgets('tab switches and selected barangay survives a round trip', (
     WidgetTester tester,
   ) async {
-    await _pumpShell(tester, navigation, repository);
+    await _pumpShell(tester, navigation, repository, predictionRepository);
     await tester.tap(find.byType(DropdownButton<String>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Aguada (Pob.)').last);
@@ -76,8 +80,11 @@ void main() {
             builder: (BuildContext context) => TextButton(
               onPressed: () => Navigator.of(context).push<void>(
                 MaterialPageRoute<void>(
-                  builder: (_) =>
-                      AppShell(navigation: navigation, repository: repository),
+                  builder: (_) => AppShell(
+                    navigation: navigation,
+                    repository: repository,
+                    predictionRepository: predictionRepository,
+                  ),
                 ),
               ),
               child: const Text('Open shell'),
@@ -109,6 +116,7 @@ void main() {
         home: AppShell(
           navigation: navigation,
           repository: repository,
+          predictionRepository: predictionRepository,
           cameraPageBuilder: (BuildContext context, String barangay) =>
               const Scaffold(body: Center(child: Text('Camera full screen'))),
         ),
@@ -129,7 +137,7 @@ void main() {
   testWidgets('See all selects Records and recordsVersion triggers reload', (
     WidgetTester tester,
   ) async {
-    await _pumpShell(tester, navigation, repository);
+    await _pumpShell(tester, navigation, repository, predictionRepository);
 
     await tester.tap(find.text('See all'));
     await tester.pumpAndSettle();
@@ -148,6 +156,7 @@ Future<void> _pumpShell(
   WidgetTester tester,
   AppNavigation navigation,
   _FakeRepository repository,
+  _FakePredictionRepository predictionRepository,
 ) async {
   tester.view.physicalSize = const Size(900, 1200);
   tester.view.devicePixelRatio = 1;
@@ -155,10 +164,47 @@ Future<void> _pumpShell(
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     MaterialApp(
-      home: AppShell(navigation: navigation, repository: repository),
+      home: AppShell(
+        navigation: navigation,
+        repository: repository,
+        predictionRepository: predictionRepository,
+      ),
     ),
   );
   await tester.pumpAndSettle();
+}
+
+class _FakePredictionRepository extends AedesActivityRepository {
+  _FakePredictionRepository()
+    : super(
+        predictor: AedesLogisticPredictor.fromJson(<String, Object?>{
+          'features': <String>[
+            'Lag_1',
+            'Lag_2',
+            'Lag_3',
+            'Lag_4',
+            'Current_Activity',
+          ],
+          'scaler_mean': <double>[0, 0, 0, 0, 0],
+          'scaler_scale': <double>[1, 1, 1, 1, 1],
+          'coefficients': <double>[1, 1, 1, 1, 1],
+          'intercept': 0,
+          'classes': <int>[0, 1],
+        }),
+      );
+
+  @override
+  Future<BarangayPrediction?> predictForBarangay(
+    String barangay, {
+    DateTime? referenceDate,
+    bool saveResult = true,
+  }) async => null;
+
+  @override
+  Future<bool> hasObservationsForBarangay(
+    String barangay, {
+    DateTime? referenceDate,
+  }) async => false;
 }
 
 class _FakeRepository extends SurveillanceRepository {

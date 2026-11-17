@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'app_navigation.dart';
 import 'data/surveillance_repository.dart';
 import 'landing_page.dart';
-import 'prediction_page.dart';
+import 'prediction/aedes_activity_repository.dart';
+import 'prediction/aedes_prediction_page.dart';
 import 'profile_page.dart';
 import 'records_page.dart';
 import 'auth/auth_controller.dart';
@@ -13,12 +14,14 @@ class AppShell extends StatefulWidget {
     super.key,
     this.navigation,
     this.repository,
+    this.predictionRepository,
     this.cameraPageBuilder,
     this.authController,
   });
 
   final AppNavigation? navigation;
   final SurveillanceRepository? repository;
+  final AedesActivityRepository? predictionRepository;
   final Widget Function(BuildContext context, String barangay)?
   cameraPageBuilder;
   final AuthController? authController;
@@ -54,7 +57,10 @@ class _AppShellState extends State<AppShell> {
                   cameraPageBuilder: widget.cameraPageBuilder,
                 ),
                 RecordsPage(repository: _repository, navigation: _navigation),
-                const PredictionPage(),
+                AedesPredictionPage(
+                  navigation: _navigation,
+                  repository: widget.predictionRepository,
+                ),
                 ProfilePage(controller: widget.authController),
               ],
             ),

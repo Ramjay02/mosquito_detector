@@ -1,21 +1,29 @@
 # Waya-waya Scanner Codebase Guide
+j
+Last updated: 2026-11-17
+
+## Changelog
+
+- 2026-11-17: Added on-device Aedes logistic-regression prediction (replaces static sample page).
 
 ## Overview and app flow
 
 Waya-waya Scanner is a Flutter app that detects and classifies mosquito larvae in phone photos taken with a clip-on microscope lens. The package name remains `mosquito_detector`, and the visible app name is `Waya-waya Scanner`.
 
-`main.dart` creates a dark Material 3 `MaterialApp` whose home is
-`lib/src/app_shell.dart`. The shell uses an `IndexedStack` to keep four tabs
-alive in this order: Home, Records, Prediction, and Profile. Its icon-only
-Material 3 `NavigationBar` stays visible at the bottom of tab pages and respects
-the system gesture area. Selecting a tab changes the stack index without
-recreating the other tab states.
+`main.dart` creates a dark Material 3 `MaterialApp` under the `_AuthApp` root
+auth gate. Bootstrap shows a splash screen, then Login while signed out,
+Account Created when verification requires acknowledgement, or
+`lib/src/app_shell.dart` when signed in. The shell uses an `IndexedStack` to
+keep four tabs alive in this order: Home, Records, Prediction, and Profile.
+Its icon-only Material 3 `NavigationBar` stays visible at the bottom of tab
+pages and respects the system gesture area. Selecting a tab changes the stack
+index without recreating the other tab states.
 
 `lib/src/app_navigation.dart` contains the small, resettable navigation state:
 `selectedTab` chooses the current tab and `recordsVersion` notifies the Records
-tab that saved records changed. Back on a non-Home tab returns to Home; Home
-allows the normal route/app back behavior. Camera, result, and record-detail
-screens are pushed above the shell, so they cover the bottom bar.
+and Prediction tabs that saved records changed. Back on a non-Home tab returns
+to Home; Home allows the normal route/app back behavior. Camera, result, and
+record-detail screens are pushed above the shell, so they cover the bottom bar.
 
 Home uses `lib/src/landing_page.dart`. It requires a selection from the 51
 Ozamiz City barangays in `kOzamizBarangays` before scanning. The “See all”
@@ -31,10 +39,13 @@ The app flow is:
 3. Result: validate and classify, and save only when the user explicitly taps
    Save.
 4. Records: view saved observations, weekly totals, and photo details.
-5. Prediction and Profile: static sample/demo pages; prediction is not
-   connected to a model.
+5. Prediction: run the on-device logistic-regression model from local saved
+   observations. Profile displays the signed-in account and authentication
+   status.
 
-Location collection, permissions, and geolocation code have been removed. There is no `location_service.dart`, no geolocator dependency, and no location fields anywhere in the current UI or database schema.
+Location collection, permissions, and geolocation code have been removed. No
+geolocator dependency or location fields exist in the current UI or database
+schema.
 
 ## Preprocessing pipeline
 
@@ -160,39 +171,89 @@ The records page shows the current weekly surveillance summary with the four per
 ### Shared photo widgets
 `lib/src/record_widgets.dart` holds the shared photo thumbnail and full-detail viewer used by both the landing page and the records page. That includes the safe placeholder for missing or unreadable files and the `InteractiveViewer` detail screen.
 
-### Prediction page (static sample)
-`lib/src/prediction_page.dart` is a static, local-only UI preview about the
-weekly presence of *Aedes aegypti* in a selected barangay and the direction of
-change four weeks ahead. It does not call the database, a model, or a network
-service. A permanent sample-data banner explains that the prediction model is
-not connected and that final decisions belong to trained health personnel.
+### Prediction page
+The live Prediction tab is `AedesPredictionPage` in
+`lib/src/prediction/aedes_prediction_page.dart`; `lib/src/app_shell.dart`
+places it in the existing third `IndexedStack` tab. The legacy
+`lib/src/prediction_page.dart` only re-exports this page. The old sample-data
+module, demo scenarios, banner, and placeholder thresholds were removed.
 
-`lib/src/data/prediction_sample.dart` defines the UI-facing sample types:
+The page uses `kOzamizBarangays` for its barangay selector. The Home page's
+selected barangay is local to Home, not shared session state, so Prediction
+maintains its own single-barangay selection. The query never combines
+barangays. Because the shell keeps tabs alive, the page refreshes when tab 2 is
+selected and when `AppNavigation.recordsVersion` changes after a record is
+saved. Model/repository initialization is deferred until Prediction is first
+selected.
 
-- `WeekObservation`: week label, positive days, observed days, and `presence`.
-  `presence` is null when `observedDays` is zero.
-- `AedesOutlook`: barangay, current week, four previous weeks, probability of
-  increase, limited-evidence flag, and missing-week labels.
-- Four fixed preview scenarios (`S1`–`S4`) demonstrate likely increase, likely
-  decrease, uncertain, and insufficient-data states.
-- `likelyIncreaseMin` (0.60), `likelyDecreaseMax` (0.40), and
-  `highPresenceMin` (0.50) are explicitly placeholder thresholds, not
-  validated.
+For complete five-week data, the page displays P(Increase), Increase/Decrease,
+the five ordered feature values, weekly positive/observed-day counts, and each
+week's positivity. Any missing exact week displays “Insufficient data” rather
+than treating missing observations as zero. The initial inactive state,
+loading spinner, model/prediction errors, empty selected-barangay state, and
+insufficient-data state are handled in the page. If the five-week window has no
+processed records, `hasObservationsForBarangay()` selects the empty message;
+some but incomplete weekly coverage displays “Insufficient data.”
 
-The page describes presence as the share of observed days with *Aedes aegypti*
-found, not a larva count. It presents current presence, the four-week direction
-outlook, inputs, a five-week widget chart, suggested actions, and explanatory
-copy. Empty observed weeks display “No data,” never a fabricated 0% presence.
-The sample probabilities and UI do not represent an operational prediction
-model.
+The page warns that the selected barangay may not have been represented in
+training data. Its disclaimer identifies the result as decision-support for
+weekly *Aedes aegypti* positivity direction four weeks ahead—not a count,
+population-density estimate, or outbreak forecast—and notes the prototype
+training size, lack of retraining after new scans, and need to follow City
+Health Office protocols.
 
-### Profile page (static sample)
-`lib/src/profile_page.dart` is a static profile preview; authentication and
-accounts are not implemented. It shows a sample profile and “Not signed in -
-accounts are coming soon” banner. Sign in and Register are disabled and marked
-“Coming soon.” The About card uses `kAppVersion` from
-`lib/src/app_info.dart`. Its privacy note states that scan records and photos
-are stored on-device and location is not collected.
+### Profile page
+`lib/src/profile_page.dart` is a real account page used behind the root auth
+gate. It displays the current account, role/status, offline mode when active,
+last online check, offline-access expiry, a status refresh action, and sign out.
+Its About card uses `kAppVersion` from `lib/src/app_info.dart`; it also states
+that scan records and photos remain on-device and location is not collected.
+
+## Aedes direction prediction (logistic regression)
+
+The offline model integration is in `lib/src/prediction/`:
+
+- `aedes_logistic_predictor.dart` loads and validates the parameter asset,
+  standardizes the five inputs, and calculates the logistic probability and
+  class.
+- `aedes_activity_repository.dart` aggregates local `surveillance_records`
+  into weekly activity for one barangay and optionally stores prediction
+  history.
+- `aedes_prediction_page.dart` implements the live Prediction tab and refresh
+  behavior.
+
+`assets/aedes_model_parameters.json` contains the exported scaler means,
+scales, logistic-regression coefficients, intercept, feature names, and class
+labels. `pubspec.yaml` includes it as a Flutter asset. The required model input
+order is `[Lag_1, Lag_2, Lag_3, Lag_4, Current_Activity]`; the predictor checks
+this exact order, five means, five scales, five coefficients, nonzero positive
+scales, a finite intercept, and class labels `0, 1` at runtime. Class `0` maps
+to Decrease and class `1` maps to Increase.
+`Lag_1` through `Lag_4` are the four preceding calendar-week values, with
+`Lag_1` the most recent prior week; `Current_Activity` is the current week's
+positivity.
+
+For each input, standardization is `z_i = (x_i - mean_i) / scale_i`. The linear
+score is `s = intercept + Σ(coefficient_i × z_i)`, and
+`P(Increase) = 1 / (1 + exp(-s))`. The predicted class is Increase when
+`P(Increase) >= 0.50`, otherwise Decrease; `P(Decrease) = 1 - P(Increase)`.
+
+The activity repository uses ISO weeks beginning Monday. Weekly positivity is
+`positive observed days / observed days`, for the selected barangay only. A
+date is observed when at least one processed saved record for that barangay
+exists on that date. A date is positive when at least one of its records has
+`species_code = 'AG'`; multiple scans on one date count as one observed day.
+Each of the current ISO week and its four exact preceding weeks must have at
+least one observed day. If any week is missing, `predictForBarangay()` returns
+`null`, which the page displays as “Insufficient data”; absent weeks/days are
+never zero-filled.
+
+All inference and data access are local; the prediction feature makes no
+network calls. The model parameters are fixed and are not retrained when a new
+scan is saved. After the Result page saves an observation it calls
+`AppNavigation.notifyRecordsChanged()`. If Prediction is selected, the
+`recordsVersion` change triggers a fresh aggregation and prediction, so a saved
+record can change that barangay's daily/weekly positivity and next result.
 
 ## SQLite database
 
@@ -273,6 +334,36 @@ Columns:
 - `created_at TEXT NOT NULL`
 - Foreign key: `week_id -> weekly_surveillance(id) ON DELETE SET NULL`
 
+This is the pre-existing prediction table. The on-device Aedes feature does not
+read or write it; `SurveillanceRepository.savePrediction()` and
+`SurveillanceRepository.latestPrediction()` remain available for the legacy
+table and are not called by the live Prediction tab.
+
+#### `aedes_direction_predictions`
+Columns:
+- `id INTEGER PRIMARY KEY AUTOINCREMENT`
+- `barangay TEXT NOT NULL`
+- `current_week_start TEXT NOT NULL`
+- `lag_1 REAL NOT NULL`
+- `lag_2 REAL NOT NULL`
+- `lag_3 REAL NOT NULL`
+- `lag_4 REAL NOT NULL`
+- `current_activity REAL NOT NULL`
+- `probability_increase REAL NOT NULL`
+- `probability_decrease REAL NOT NULL`
+- `predicted_class INTEGER NOT NULL`
+- `model_version TEXT NOT NULL`
+- `created_at TEXT NOT NULL`
+
+`AedesActivityRepository.ensurePredictionTable()` creates this table with
+`CREATE TABLE IF NOT EXISTS` and creates its barangay/week index. Both
+`predictForBarangay()` and `predictionHistory()` call the ensure method, so the
+table is created on first repository use even when the database already exists
+at schema version 3. `AppDatabase.schemaVersion` remains `3`; the existing
+tables and their columns were not altered.
+The existing-version-3 first-use case is covered by
+`test/aedes_activity_repository_test.dart`.
+
 ## Data model and repository patterns
 
 The repository is `lib/src/data/surveillance_repository.dart`.
@@ -285,6 +376,23 @@ It currently supports:
 - `recordCount()`
 - `latestWeek()` and `latestPrediction()`
 - `savePrediction()`
+
+The separate `lib/src/prediction/aedes_activity_repository.dart` exposes:
+
+- `ensurePredictionTable()`: create the prediction-history table and index if
+  missing.
+- `hasObservationsForBarangay(String barangay, {DateTime? referenceDate})`:
+  check whether the selected barangay has processed records in the exact
+  five-week prediction window.
+- `predictForBarangay(String barangay, {DateTime? referenceDate, bool saveResult = true})`:
+  aggregate the selected barangay's five exact ISO weeks, infer a direction,
+  and optionally persist the result.
+- `predictionHistory(String barangay)`: return the newest 30 saved predictions
+  for that barangay.
+
+The live prediction feature uses `aedes_direction_predictions`, not
+`prediction_results`. The old `savePrediction()` and `latestPrediction()` APIs
+are exercised by legacy repository tests but have no live UI call sites.
 
 The repository writes the saved photo under the app documents directory in `wayawaya/records`, and stores that file path in `surveillance_records.image_path`.
 
@@ -299,11 +407,15 @@ The storage code decodes the photo, bakes EXIF orientation, resizes the long sid
 ## Important current realities
 
 - No geolocation or location permission code remains in the app.
-- `lib/src/constants.dart` defines the exact barangay list and keeps the selected barangay in session state.
+- `lib/src/constants.dart` defines the 51-item barangay list. Home's selected
+  barangay is widget-local; Prediction keeps its own selected barangay.
 - The landing page shows all barangays in the recent-captures list because it queries all saved records, with the barangay given in each row.
 - The app is intentionally save-on-user-tap: no record is inserted until the user confirms Save on the result page.
 - The database is versioned at `schemaVersion = 3`.
-- The migration from older schema versions removes old record image files before recreating the surveillance and prediction tables.
+- The migration from older schema versions removes old record image files
+  before recreating the existing surveillance and `prediction_results` tables.
+- The logistic-regression model is preliminary and runs offline using fixed
+  exported parameters; newly saved observations affect inputs, not training.
 
 ## Authentication and profile
 
@@ -335,3 +447,47 @@ The storage code decodes the photo, bakes EXIF orientation, resizes the long sid
   then checks `/api/me.php` in the background. Logout revokes the server token
   when reachable and always clears the auth secure-storage values. Scan records,
   photos, and the local SQLite schema remain independent.
+
+## Limitations
+
+- The preliminary model was trained on 92 eligible rows from 13 barangays.
+- Only `AG` (Aedes aegypti) counts as a positive day. Any processed non-`AG`
+  record without an `AG` record on that date counts as a negative observed day;
+  City Health must confirm this daily rule before operational use.
+- The output predicts the direction of weekly positivity four weeks ahead. It
+  does not predict larval counts, mosquito population density, or outbreaks.
+- The 0.50 classification cutoff is the default classifier boundary, not a
+  validated public-health action threshold.
+- Model performance is unvalidated for barangays absent from the training
+  data; the page shows a limited-evidence notice because the parameter asset
+  has no barangay-specific representation metadata.
+- Python-versus-Dart `predict_proba` parity for
+  `[0.5, 0.6, 0.7, 0.4, 0.55]` is pending. The predictor test contains a
+  clearly marked TODO to compare within `1e-6` when the Python output is
+  provided.
+
+## Testing
+
+Prediction-focused tests:
+
+- `test/aedes_logistic_predictor_test.dart`: load the checked-in parameters;
+  verify feature order, vector dimensions, class labels, and input bounds.
+  Python parity remains marked TODO.
+- `test/aedes_activity_repository_test.dart`: use temporary FFI SQLite
+  databases to verify complete and missing five-week histories, barangay
+  isolation, same-day deduplication, positive/negative day rules, and first-use
+  table creation against a version-3 database.
+- `test/prediction_page_test.dart`: verify the 51-item selector, displayed
+  prediction outputs/disclaimers, insufficient data, and refreshes on tab
+  selection and `recordsVersion`.
+- `test/app_shell_test.dart`: verify tab order, icon-only navigation, back
+  behavior, and existing Records refresh behavior with the Prediction tab in
+  the shell.
+
+Other tests under `test/` cover authentication, database migrations and
+repositories, saved photos, preprocessing, detection/classification, and
+screen behavior. Run the full suite with:
+
+```shell
+flutter test
+```
